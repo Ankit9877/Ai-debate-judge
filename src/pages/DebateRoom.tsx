@@ -140,38 +140,49 @@ const DebateRoom = () => {
     if (!user) return;
 
     try {
-      // Check if user is already a participant
-      const { data: existingParticipants } = await supabase
+      // 1. ATOMICALLY INSERT PARTICIPANTS (Must succeed now that DB is fixed)
+      const { error: upsertError } = await supabase
         .from('debate_participants')
-        .select('*')
-        .eq('debate_id', id)
-        .eq('user_id', user.id);
+        .upsert([
+          { debate_id: id, user_id: user.id, side: 'a' },
+          { debate_id: id, user_id: user.id, side: 'b' },
+        ], { 
+          onConflict: 'debate_id, user_id, side',
+          ignoreDuplicates: true 
+        });
 
-      // Only insert if not already a participant
-      if (!existingParticipants || existingParticipants.length === 0) {
-        const { error } = await supabase
-          .from('debate_participants')
-          .insert([
-            { debate_id: id, user_id: user.id, side: 'a' },
-            { debate_id: id, user_id: user.id, side: 'b' },
-          ]);
+      if (upsertError) throw upsertError;
 
-        if (error) throw error;
+      // 2. UPDATE DEBATE STATUS
+      let statusUpdated = false;
+      if (debate?.status === 'waiting' || debate?.status === 'created') {
+        const { error: updateError } = await supabase
+          .from('debates')
+          .update({ status: 'active', started_at: new Date().toISOString() })
+          .eq('id', id);
+          
+        if (updateError) throw updateError;
+        statusUpdated = true;
       }
 
-      // Start debate
-      await supabase
-        .from('debates')
-        .update({ status: 'active', started_at: new Date().toISOString() })
-        .eq('id', id);
+      // 3. RELIABLE STATE SYNC
+      // Await fetch to grab fresh data (optional but good practice)
+      await fetchDebateData(); 
+      
+      // CRITICAL: Manually update local state variables to force re-render, 
+      // ensuring the UI immediately recognizes the debate is active and the user has joined.
+      if (statusUpdated && debate) {
+        setDebate({ ...debate, status: 'active' });
+      }
+      
+      setUserSide('a'); // User is now a participant, hiding the Start Button
+      setTimerActive(true); // Start the timer, showing the debate controls immediately
 
       toast({
         title: "Success",
         description: "Debate started! You control both sides.",
       });
 
-      setUserSide('a'); // Set to 'a' just to mark as joined
-      fetchDebateData();
     } catch (error: any) {
       toast({
         title: "Error",
@@ -496,7 +507,7 @@ const DebateRoom = () => {
                       placeholder={
                         currentTurn !== 'a'
                           ? "Wait for your turn..."
-                          : "Present your argument..."
+                          : `Present your argument for ${debate.side_a_name}...`
                       }
                       className="min-h-[120px] mb-3"
                       disabled={currentTurn !== 'a'}
@@ -531,7 +542,7 @@ const DebateRoom = () => {
                       placeholder={
                         currentTurn !== 'b'
                           ? "Wait for your turn..."
-                          : "Present your argument..."
+                          : `Present your argument for ${debate.side_b_name}...`
                       }
                       className="min-h-[120px] mb-3"
                       disabled={currentTurn !== 'b'}
@@ -551,7 +562,7 @@ const DebateRoom = () => {
           </>
         )}
 
-        {/* Original grid view for online debates */}
+        {/* Original grid view for online debates (unaffected by offline changes) */}
         {isOnlineDebate && (
           <div className="grid md:grid-cols-2 gap-6 mb-6">
             {/* Side A Section */}
