@@ -22,9 +22,62 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
+    // Client using Service Role Key (for privileged read/write operations)
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch debate details
+    // --- START: USER AUTHENTICATION AND AUTHORIZATION ---
+    
+    // 1. Get the JWT from the Authorization header
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: Missing or invalid Authorization header' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const token = authHeader.split(' ')[1];
+
+    // You MUST set SUPABASE_ANON_KEY as a secret for this to work
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!; 
+    
+    // 2. Create a client scoped to the user's token
+    const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    
+    // 3. Get the user object from the JWT
+    const { data: userData, error: userError } = await userSupabase.auth.getUser(token);
+
+    if (userError || !userData.user) {
+        return new Response(JSON.stringify({ error: `Authentication failed: ${userError?.message || 'Invalid user data'}` }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+    }
+
+    const userId = userData.user.id;
+    
+    // 4. Check if the authenticated user is a participant in this debate
+    // We use the Service Role client for a trusted check against the 'debate_participants' table
+    const { data: participantsData, error: participantsError } = await supabase
+      .from('debate_participants')
+      .select('user_id')
+      .eq('debate_id', debateId)
+      .eq('user_id', userId);
+
+    if (participantsError) throw participantsError;
+    
+    // If the user is not found in the participants list, forbid the request
+    if (!participantsData || participantsData.length === 0) {
+      return new Response(JSON.stringify({ error: 'Forbidden: User is not authorized to evaluate this debate.' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    // --- END: USER AUTHENTICATION AND AUTHORIZATION ---
+
+
+    // Fetch debate details (Using Service Role client)
     const { data: debate, error: debateError } = await supabase
       .from('debates')
       .select('*')
@@ -33,7 +86,7 @@ serve(async (req) => {
 
     if (debateError) throw debateError;
 
-    // Fetch all arguments
+    // Fetch all arguments (Using Service Role client)
     const { data: debateArgs, error: argsError } = await supabase
       .from('debate_arguments')
       .select('*')
@@ -136,45 +189,3 @@ Respond in JSON format with this structure:
     const { data: result, error: resultError } = await supabase
       .from('debate_results')
       .insert({
-        debate_id: debateId,
-        side_a_score: evaluation.side_a_score,
-        side_b_score: evaluation.side_b_score,
-        side_a_logic_score: evaluation.side_a_logic_score,
-        side_a_evidence_score: evaluation.side_a_evidence_score,
-        side_a_persuasion_score: evaluation.side_a_persuasion_score,
-        side_b_logic_score: evaluation.side_b_logic_score,
-        side_b_evidence_score: evaluation.side_b_evidence_score,
-        side_b_persuasion_score: evaluation.side_b_persuasion_score,
-        winner: evaluation.winner,
-        reasoning: evaluation.reasoning,
-        blockchain_tx_hash: blockchainTxHash,
-        blockchain_verified_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (resultError) throw resultError;
-
-    // Update debate status
-    await supabase
-      .from('debates')
-      .update({ 
-        status: 'completed',
-        completed_at: new Date().toISOString()
-      })
-      .eq('id', debateId);
-
-    return new Response(JSON.stringify({ success: true, result }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-
-  } catch (error) {
-    console.error('Error evaluating debate:', error);
-    return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : 'Unknown error' 
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-});
