@@ -30,7 +30,6 @@ CREATE TABLE public.debates (
   side_b_name TEXT NOT NULL DEFAULT 'Side B',
   status TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'completed')),
   max_arguments INTEGER DEFAULT 5,
-  mode TEXT NOT NULL DEFAULT 'online' CHECK (mode IN ('online', 'offline')),
   created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
   started_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ
@@ -89,7 +88,6 @@ CREATE POLICY "Anyone can view arguments"
   ON public.debate_arguments FOR SELECT
   USING (true);
 
--- ✅ Fixed: allow participants to insert argument only if debate is active and on their side
 CREATE POLICY "Participants can add arguments"
   ON public.debate_arguments FOR INSERT
   TO authenticated

@@ -14,7 +14,9 @@ serve(async (req) => {
   try {
     const { debateId } = await req.json();
     
-    if (!debateId) throw new Error('Debate ID is required');
+    if (!debateId) {
+      throw new Error('Debate ID is required');
+    }
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -28,6 +30,7 @@ serve(async (req) => {
       .select('*')
       .eq('id', debateId)
       .single();
+
     if (debateError) throw debateError;
 
     // Fetch all arguments
@@ -35,17 +38,37 @@ serve(async (req) => {
       .from('debate_arguments')
       .select('*')
       .eq('debate_id', debateId)
-      .order('argument_order', { ascending: true });
+      .order('created_at', { ascending: true });
+
     if (argsError) throw argsError;
 
     const sideAArgs = debateArgs?.filter(arg => arg.side === 'a') || [];
     const sideBArgs = debateArgs?.filter(arg => arg.side === 'b') || [];
 
-    // AI prompt
-    const prompt = `You are an expert debate judge. Analyze the debate "${debate.topic}".
-Side A arguments: ${sideAArgs.map((a,i)=>`${i+1}. ${a.content}`).join('\n')}
-Side B arguments: ${sideBArgs.map((a,i)=>`${i+1}. ${a.content}`).join('\n')}
-Evaluate logic, evidence, persuasiveness. Respond with JSON:
+    // Prepare prompt for AI Judge
+    const prompt = `You are an expert debate judge. Analyze the following debate and provide a comprehensive evaluation.
+
+Topic: ${debate.topic}
+Description: ${debate.description || 'N/A'}
+
+${debate.side_a_name} Arguments:
+${sideAArgs.map((arg, i) => `${i + 1}. ${arg.content}`).join('\n')}
+
+${debate.side_b_name} Arguments:
+${sideBArgs.map((arg, i) => `${i + 1}. ${arg.content}`).join('\n')}
+
+Evaluate both sides on:
+1. Logic and reasoning (0-100)
+2. Evidence and facts (0-100)
+3. Persuasiveness (0-100)
+
+Provide:
+- Overall scores for each side (0-100)
+- Individual scores for logic, evidence, and persuasiveness for each side
+- Winner (a, b, or tie)
+- Detailed reasoning (2-3 paragraphs)
+
+Respond in JSON format with this structure:
 {
   "side_a_score": number,
   "side_b_score": number,
@@ -55,10 +78,11 @@ Evaluate logic, evidence, persuasiveness. Respond with JSON:
   "side_b_logic_score": number,
   "side_b_evidence_score": number,
   "side_b_persuasion_score": number,
-  "winner": "a"|"b"|"tie",
+  "winner": "a" | "b" | "tie",
   "reasoning": string
 }`;
 
+    // Call Lovable AI
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -74,11 +98,19 @@ Evaluate logic, evidence, persuasiveness. Respond with JSON:
       }),
     });
 
-    if (!response.ok) throw new Error('AI evaluation failed');
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('AI gateway error:', response.status, errorText);
+      throw new Error('Failed to evaluate debate with AI');
+    }
 
     const aiResponse = await response.json();
-    const evaluation = JSON.parse(aiResponse.choices[0].message.content);
+    const content = aiResponse.choices[0].message.content;
+    
+    // Parse AI response
+    const evaluation = JSON.parse(content);
 
+    // Create a verifiable hash of the debate result
     const resultData = {
       debateId,
       topic: debate.topic,
@@ -88,15 +120,19 @@ Evaluate logic, evidence, persuasiveness. Respond with JSON:
       winner: evaluation.winner,
       reasoning: evaluation.reasoning
     };
-
+    
+    // Create SHA-256 hash of the result data for blockchain verification
     const encoder = new TextEncoder();
     const data = encoder.encode(JSON.stringify(resultData));
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const resultHash = Array.from(new Uint8Array(hashBuffer))
-      .map(b => b.toString(16).padStart(2, '0')).join('');
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const resultHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    // In a real implementation, this hash would be submitted to a blockchain
+    // For now, we create a blockchain-style transaction hash with the result hash
     const blockchainTxHash = `0x${resultHash}`;
 
-    // Insert results
+    // Store results in database
     const { data: result, error: resultError } = await supabase
       .from('debate_results')
       .insert({
@@ -116,12 +152,16 @@ Evaluate logic, evidence, persuasiveness. Respond with JSON:
       })
       .select()
       .single();
+
     if (resultError) throw resultError;
 
     // Update debate status
     await supabase
       .from('debates')
-      .update({ status: 'completed', completed_at: new Date().toISOString() })
+      .update({ 
+        status: 'completed',
+        completed_at: new Date().toISOString()
+      })
       .eq('id', debateId);
 
     return new Response(JSON.stringify({ success: true, result }), {
@@ -129,8 +169,10 @@ Evaluate logic, evidence, persuasiveness. Respond with JSON:
     });
 
   } catch (error) {
-    console.error(error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), {
+    console.error('Error evaluating debate:', error);
+    return new Response(JSON.stringify({ 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -140,49 +140,45 @@ const DebateRoom = () => {
     if (!user) return;
 
     try {
-      // 1. ATOMICALLY INSERT PARTICIPANTS (Must succeed now that DB is fixed)
-      const { error: upsertError } = await supabase
+      // Check which sides the user has already joined
+      const { data: existingParticipants } = await supabase
         .from('debate_participants')
-        .upsert([
-          { debate_id: id, user_id: user.id, side: 'a' },
-          { debate_id: id, user_id: user.id, side: 'b' },
-        ], { 
-          onConflict: 'debate_id, user_id, side',
-          ignoreDuplicates: true 
-        });
+        .select('side')
+        .eq('debate_id', id)
+        .eq('user_id', user.id);
 
-      if (upsertError) throw upsertError;
-
-      // 2. UPDATE DEBATE STATUS
-      let statusUpdated = false;
-      if (debate?.status === 'waiting' || debate?.status === 'created') {
-        const { error: updateError } = await supabase
-          .from('debates')
-          .update({ status: 'active', started_at: new Date().toISOString() })
-          .eq('id', id);
-          
-        if (updateError) throw updateError;
-        statusUpdated = true;
+      const existingSides = new Set(existingParticipants?.map(p => p.side) || []);
+      const sidesToInsert = [];
+      
+      if (!existingSides.has('a')) {
+        sidesToInsert.push({ debate_id: id, user_id: user.id, side: 'a' });
+      }
+      if (!existingSides.has('b')) {
+        sidesToInsert.push({ debate_id: id, user_id: user.id, side: 'b' });
       }
 
-      // 3. RELIABLE STATE SYNC
-      // Await fetch to grab fresh data (optional but good practice)
-      await fetchDebateData(); 
-      
-      // CRITICAL: Manually update local state variables to force re-render, 
-      // ensuring the UI immediately recognizes the debate is active and the user has joined.
-      if (statusUpdated && debate) {
-        setDebate({ ...debate, status: 'active' });
+      // Insert only missing sides
+      if (sidesToInsert.length > 0) {
+        const { error } = await supabase
+          .from('debate_participants')
+          .insert(sidesToInsert);
+
+        if (error) throw error;
       }
-      
-      setUserSide('a'); // User is now a participant, hiding the Start Button
-      setTimerActive(true); // Start the timer, showing the debate controls immediately
+
+      // Start debate
+      await supabase
+        .from('debates')
+        .update({ status: 'active', started_at: new Date().toISOString() })
+        .eq('id', id);
 
       toast({
         title: "Success",
         description: "Debate started! You control both sides.",
       });
 
+      setUserSide('a'); // Set to 'a' just to mark as joined
+      fetchDebateData();
     } catch (error: any) {
       toast({
         title: "Error",
@@ -446,39 +442,51 @@ const DebateRoom = () => {
               </Card>
             )}
 
-            {/* Chat Display */}
+            {/* WhatsApp-Style Chat Display */}
             <Card className="glass-panel mb-6">
               <CardContent className="pt-6">
-                <div className="space-y-4 max-h-[500px] overflow-y-auto p-4">
+                <h3 className="text-lg font-semibold mb-4">Debate Arguments</h3>
+                <div className="space-y-3 max-h-[500px] overflow-y-auto p-4 bg-muted/30 rounded-lg">
                   {debateArguments.length === 0 ? (
-                    <div className="text-center text-muted-foreground py-8">
+                    <div className="text-center text-muted-foreground py-12">
                       No arguments yet. Start the debate!
                     </div>
                   ) : (
-                    debateArguments.map((arg, idx) => (
-                      <div
-                        key={arg.id}
-                        className={`flex ${arg.side === 'a' ? 'justify-start' : 'justify-end'}`}
-                      >
+                    debateArguments.map((arg, idx) => {
+                      const isLeftSide = arg.side === 'a';
+                      return (
                         <div
-                          className={`max-w-[70%] p-4 rounded-lg ${
-                            arg.side === 'a'
-                              ? 'bg-primary/10 border border-primary/20'
-                              : 'bg-secondary/10 border border-secondary/20'
-                          }`}
+                          key={arg.id}
+                          className={`flex ${isLeftSide ? 'justify-start' : 'justify-end'} animate-slide-up`}
                         >
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-xs font-semibold">
-                              {arg.side === 'a' ? debate.side_a_name : debate.side_b_name}
-                            </span>
-                            <Badge variant="outline" className="text-xs">
-                              #{idx + 1}
-                            </Badge>
+                          <div
+                            className={`max-w-[75%] rounded-2xl p-3 shadow-sm ${
+                              isLeftSide
+                                ? 'bg-card border border-primary/20 rounded-tl-none'
+                                : 'bg-primary/20 border border-primary/30 rounded-tr-none'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-xs font-bold ${isLeftSide ? 'text-primary' : 'text-primary'}`}>
+                                {isLeftSide ? debate.side_a_name : debate.side_b_name}
+                              </span>
+                              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                                #{idx + 1}
+                              </Badge>
+                            </div>
+                            <p className="text-sm leading-relaxed break-words">{arg.content}</p>
+                            <div className="flex justify-end mt-1">
+                              <span className="text-[10px] text-muted-foreground">
+                                {new Date(arg.created_at).toLocaleTimeString([], { 
+                                  hour: '2-digit', 
+                                  minute: '2-digit' 
+                                })}
+                              </span>
+                            </div>
                           </div>
-                          <p className="text-sm">{arg.content}</p>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                   <div ref={messagesEndRef} />
                 </div>
@@ -507,7 +515,7 @@ const DebateRoom = () => {
                       placeholder={
                         currentTurn !== 'a'
                           ? "Wait for your turn..."
-                          : `Present your argument for ${debate.side_a_name}...`
+                          : "Present your argument..."
                       }
                       className="min-h-[120px] mb-3"
                       disabled={currentTurn !== 'a'}
@@ -542,7 +550,7 @@ const DebateRoom = () => {
                       placeholder={
                         currentTurn !== 'b'
                           ? "Wait for your turn..."
-                          : `Present your argument for ${debate.side_b_name}...`
+                          : "Present your argument..."
                       }
                       className="min-h-[120px] mb-3"
                       disabled={currentTurn !== 'b'}
@@ -562,7 +570,7 @@ const DebateRoom = () => {
           </>
         )}
 
-        {/* Original grid view for online debates (unaffected by offline changes) */}
+        {/* Original grid view for online debates */}
         {isOnlineDebate && (
           <div className="grid md:grid-cols-2 gap-6 mb-6">
             {/* Side A Section */}
