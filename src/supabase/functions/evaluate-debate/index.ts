@@ -189,3 +189,45 @@ Respond in JSON format with this structure:
     const { data: result, error: resultError } = await supabase
       .from('debate_results')
       .insert({
+        debate_id: debateId,
+        side_a_score: evaluation.side_a_score,
+        side_b_score: evaluation.side_b_score,
+        side_a_logic_score: evaluation.side_a_logic_score,
+        side_a_evidence_score: evaluation.side_a_evidence_score,
+        side_a_persuasion_score: evaluation.side_a_persuasion_score,
+        side_b_logic_score: evaluation.side_b_logic_score,
+        side_b_evidence_score: evaluation.side_b_evidence_score,
+        side_b_persuasion_score: evaluation.side_b_persuasion_score,
+        winner: evaluation.winner,
+        reasoning: evaluation.reasoning,
+        blockchain_tx_hash: blockchainTxHash,
+        blockchain_verified_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (resultError) throw resultError;
+
+    // Update debate status
+    await supabase
+      .from('debates')
+      .update({ 
+        status: 'completed',
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', debateId);
+
+    return new Response(JSON.stringify({ success: true, result }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+
+  } catch (error) {
+    console.error('Error evaluating debate:', error);
+    return new Response(JSON.stringify({ 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+});
