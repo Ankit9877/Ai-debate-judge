@@ -1,0 +1,5 @@
+-- -- Add columns to track timer state for offline debates
+-- ALTER TABLE public.debates
+-- ADD COLUMN current_turn text DEFAULT 'a',
+-- ADD COLUMN current_turn_started_at timestamp with time zone,
+-- ADD COLUMN total_time_started_at timestamp with time zone;

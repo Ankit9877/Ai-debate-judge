@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -37,12 +37,49 @@ const DebateRoom = () => {
     });
   }, [navigate]);
 
+  const fetchDebateData = useCallback(async () => {
+    if (!id) return;
+    
+    const { data: debateData } = await supabase
+      .from('debates')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    const { data: argsData } = await supabase
+      .from('debate_arguments')
+      .select('*, profiles(username, display_name)')
+      .eq('debate_id', id)
+      .order('created_at', { ascending: true });
+
+    const { data: partsData } = await supabase
+      .from('debate_participants')
+      .select('*, profiles(username)')
+      .eq('debate_id', id);
+
+    const { data: resultData } = await supabase
+      .from('debate_results')
+      .select('*')
+      .eq('debate_id', id)
+      .single();
+
+    setDebate(debateData);
+    setDebateArguments(argsData || []);
+    setParticipants(partsData || []);
+    setResult(resultData);
+
+    const userParticipant = partsData?.find(p => p.user_id === user?.id);
+    if (userParticipant) {
+      setUserSide(userParticipant.side as 'a' | 'b');
+    }
+  }, [id, user]);
+
   useEffect(() => {
     if (id && user) {
       fetchDebateData();
       subscribeToChanges();
     }
-  }, [id, user]);
+  }, [id, user, fetchDebateData]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -77,41 +114,6 @@ const DebateRoom = () => {
   const startTimer = () => {
     setTimerActive(true);
     setTimeLeft(120);
-  };
-
-  const fetchDebateData = async () => {
-    const { data: debateData } = await supabase
-      .from('debates')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    const { data: argsData } = await supabase
-      .from('debate_arguments')
-      .select('*, profiles(username, display_name)')
-      .eq('debate_id', id)
-      .order('created_at', { ascending: true });
-
-    const { data: partsData } = await supabase
-      .from('debate_participants')
-      .select('*, profiles(username)')
-      .eq('debate_id', id);
-
-    const { data: resultData } = await supabase
-      .from('debate_results')
-      .select('*')
-      .eq('debate_id', id)
-      .single();
-
-    setDebate(debateData);
-    setDebateArguments(argsData || []);
-    setParticipants(partsData || []);
-    setResult(resultData);
-
-    const userParticipant = partsData?.find(p => p.user_id === user?.id);
-    if (userParticipant) {
-      setUserSide(userParticipant.side as 'a' | 'b');
-    }
   };
 
   const subscribeToChanges = () => {
@@ -251,10 +253,14 @@ const DebateRoom = () => {
 
       setArgument("");
       
+      // FIX 1: Force re-fetch immediately to ensure argument list updates right away
+      await fetchDebateData();
+
       // Switch turn and reset timer for offline debates
       if (debate?.mode !== 'online') {
         switchTurn();
-        if (!timerActive && debateArguments.length === 0) {
+        // FIX 2: Start timer if it's not already active
+        if (!timerActive) {
           startTimer();
         }
       }
@@ -433,7 +439,8 @@ const DebateRoom = () => {
                       </div>
                     </div>
                   </div>
-                  {!timerActive && debateArguments.length === 0 && (
+                  {/* FIX: Simplified button visibility - show if timer is not active */}
+                  {!timerActive && (
                     <Button onClick={startTimer} className="w-full mt-4">
                       Start Debate Timer
                     </Button>

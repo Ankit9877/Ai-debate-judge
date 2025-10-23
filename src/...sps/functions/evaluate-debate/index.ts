@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // CORS Preflight Request Handler
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -18,14 +19,21 @@ serve(async (req) => {
       throw new Error('Debate ID is required');
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    // --- FIX 1: Use GEMINI_API_KEY and add check ---
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    if (!GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY is not set in environment variables.');
+    }
+    // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_ANON_KEY are provided automatically by Supabase
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!; 
+    // --- END FIX 1 ---
     
     // Client using Service Role Key (for privileged read/write operations)
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // --- START: USER AUTHENTICATION AND AUTHORIZATION ---
+    // --- START: USER AUTHENTICATION AND AUTHORIZATION (UNCHANGED) ---
     
     // 1. Get the JWT from the Authorization header
     const authHeader = req.headers.get('Authorization');
@@ -37,9 +45,6 @@ serve(async (req) => {
     }
     const token = authHeader.split(' ')[1];
 
-    // You MUST set SUPABASE_ANON_KEY as a secret for this to work
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!; 
-    
     // 2. Create a client scoped to the user's token
     const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: `Bearer ${token}` } },
@@ -58,7 +63,6 @@ serve(async (req) => {
     const userId = userData.user.id;
     
     // 4. Check if the authenticated user is a participant in this debate
-    // We use the Service Role client for a trusted check against the 'debate_participants' table
     const { data: participantsData, error: participantsError } = await supabase
       .from('debate_participants')
       .select('user_id')
@@ -67,7 +71,6 @@ serve(async (req) => {
 
     if (participantsError) throw participantsError;
     
-    // If the user is not found in the participants list, forbid the request
     if (!participantsData || participantsData.length === 0) {
       return new Response(JSON.stringify({ error: 'Forbidden: User is not authorized to evaluate this debate.' }), {
             status: 403,
@@ -77,7 +80,7 @@ serve(async (req) => {
     // --- END: USER AUTHENTICATION AND AUTHORIZATION ---
 
 
-    // Fetch debate details (Using Service Role client)
+    // Fetch debate and arguments
     const { data: debate, error: debateError } = await supabase
       .from('debates')
       .select('*')
@@ -86,7 +89,6 @@ serve(async (req) => {
 
     if (debateError) throw debateError;
 
-    // Fetch all arguments (Using Service Role client)
     const { data: debateArgs, error: argsError } = await supabase
       .from('debate_arguments')
       .select('*')
@@ -121,48 +123,59 @@ Provide:
 - Winner (a, b, or tie)
 - Detailed reasoning (2-3 paragraphs)
 
-Respond in JSON format with this structure:
-{
-  "side_a_score": number,
-  "side_b_score": number,
-  "side_a_logic_score": number,
-  "side_a_evidence_score": number,
-  "side_a_persuasion_score": number,
-  "side_b_logic_score": number,
-  "side_b_evidence_score": number,
-  "side_b_persuasion_score": number,
-  "winner": "a" | "b" | "tie",
-  "reasoning": string
-}`;
+Respond in JSON format with the specified schema.`;
 
-    // Call Lovable AI
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // --- FIX 2: Call Google Gemini API directly with JSON Schema ---
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + GEMINI_API_KEY, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: 'You are an expert debate judge. Always respond with valid JSON only.' },
-          { role: 'user', content: prompt }
+        contents: [
+            { role: 'user', parts: [{ text: prompt }] }
         ],
+        config: {
+            systemInstruction: 'You are an expert debate judge. Always respond with valid JSON only.',
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: "OBJECT",
+                properties: {
+                    side_a_score: { type: "NUMBER" },
+                    side_b_score: { type: "NUMBER" },
+                    side_a_logic_score: { type: "NUMBER" },
+                    side_a_evidence_score: { type: "NUMBER" },
+                    side_a_persuasion_score: { type: "NUMBER" },
+                    side_b_logic_score: { type: "NUMBER" },
+                    side_b_evidence_score: { type: "NUMBER" },
+                    side_b_persuasion_score: { type: "NUMBER" },
+                    winner: { type: "STRING", enum: ["a", "b", "tie"] },
+                    reasoning: { type: "STRING" }
+                },
+                required: [
+                    "side_a_score", "side_b_score", "side_a_logic_score", 
+                    "side_a_evidence_score", "side_a_persuasion_score", 
+                    "side_b_logic_score", "side_b_evidence_score", 
+                    "side_b_persuasion_score", "winner", "reasoning"
+                ]
+            }
+        }
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('AI gateway error:', response.status, errorText);
-      throw new Error('Failed to evaluate debate with AI');
+      console.error('AI API error:', response.status, errorText);
+      throw new Error('Failed to evaluate debate with AI: ' + errorText);
     }
 
     const aiResponse = await response.json();
-    const content = aiResponse.choices[0].message.content;
     
-    // Parse AI response
+    // Parse AI response from the Gemini structure
+    const content = aiResponse.candidates[0].content.parts[0].text;
     const evaluation = JSON.parse(content);
-
+    // --- END FIX 2 ---
+    
     // Create a verifiable hash of the debate result
     const resultData = {
       debateId,
@@ -182,7 +195,6 @@ Respond in JSON format with this structure:
     const resultHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     
     // In a real implementation, this hash would be submitted to a blockchain
-    // For now, we create a blockchain-style transaction hash with the result hash
     const blockchainTxHash = `0x${resultHash}`;
 
     // Store results in database
