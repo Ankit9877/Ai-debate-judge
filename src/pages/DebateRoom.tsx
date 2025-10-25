@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, replace } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { toast as Toast } from 'react-toastify'
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,7 +40,7 @@ const DebateRoom = () => {
 
   const fetchDebateData = useCallback(async () => {
     if (!id) return;
-    
+
     const { data: debateData } = await supabase
       .from('debates')
       .select('*')
@@ -92,7 +93,7 @@ const DebateRoom = () => {
     const timer = setInterval(() => {
       // Countdown total debate time
       setTotalTimeLeft((prev) => Math.max(0, prev - 1));
-      
+
       // Countdown per-argument time
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -105,6 +106,19 @@ const DebateRoom = () => {
 
     return () => clearInterval(timer);
   }, [timerActive, debate?.mode]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "Do you want to reload page??";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
 
   const switchTurn = () => {
     setCurrentTurn(prev => prev === 'a' ? 'b' : 'a');
@@ -151,7 +165,7 @@ const DebateRoom = () => {
 
       const existingSides = new Set(existingParticipants?.map(p => p.side) || []);
       const sidesToInsert = [];
-      
+
       if (!existingSides.has('a')) {
         sidesToInsert.push({ debate_id: id, user_id: user.id, side: 'a' });
       }
@@ -234,7 +248,7 @@ const DebateRoom = () => {
 
     // For offline debates, determine which side is submitting based on current turn
     const submittingSide = debate?.mode === 'online' ? userSide : currentTurn;
-    
+
     if (!submittingSide) return;
 
     setLoading(true);
@@ -252,7 +266,7 @@ const DebateRoom = () => {
       if (error) throw error;
 
       setArgument("");
-      
+
       // FIX 1: Force re-fetch immediately to ensure argument list updates right away
       await fetchDebateData();
 
@@ -318,12 +332,20 @@ const DebateRoom = () => {
   const sideBParticipant = participants.find(p => p.side === 'b');
   const isOnlineDebate = debate.mode === 'online';
 
+  const handleExit = () => {
+    if (timerActive) {
+      Toast.warning("Can't exit while debate is running!!!", {position: "top-left"});
+      return
+    }
+    navigate('/debates');
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-primary/10">
       <div className="container mx-auto px-4 py-8 max-w-6xl">
-        <Button 
-          variant="ghost" 
-          onClick={() => navigate("/debates")}
+        <Button
+          variant="ghost"
+          onClick={() => handleExit()}
           className="mb-4"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -348,8 +370,8 @@ const DebateRoom = () => {
               </div>
               <Badge className={
                 debate.status === 'waiting' ? 'bg-yellow-500/20 text-yellow-500' :
-                debate.status === 'active' ? 'bg-green-500/20 text-green-500' :
-                'bg-blue-500/20 text-blue-500'
+                  debate.status === 'active' ? 'bg-green-500/20 text-green-500' :
+                    'bg-blue-500/20 text-blue-500'
               }>
                 {debate.status}
               </Badge>
@@ -440,11 +462,14 @@ const DebateRoom = () => {
                     </div>
                   </div>
                   {/* FIX: Simplified button visibility - show if timer is not active */}
-                  {!timerActive && (
-                    <Button onClick={startTimer} className="w-full mt-4">
+                  {timerActive ?
+                    <Button onClick={() => navigate('/debates')} variant="destructive" className="w-full mt-4">
+                      End Debate
+                    </Button>
+                    : <Button onClick={startTimer} className="w-full mt-4">
                       Start Debate Timer
                     </Button>
-                  )}
+                  }
                 </CardContent>
               </Card>
             )}
@@ -467,11 +492,10 @@ const DebateRoom = () => {
                           className={`flex ${isLeftSide ? 'justify-start' : 'justify-end'} animate-slide-up`}
                         >
                           <div
-                            className={`max-w-[75%] rounded-2xl p-3 shadow-sm ${
-                              isLeftSide
-                                ? 'bg-card border border-primary/20 rounded-tl-none'
-                                : 'bg-primary/20 border border-primary/30 rounded-tr-none'
-                            }`}
+                            className={`max-w-[75%] rounded-2xl p-3 shadow-sm ${isLeftSide
+                              ? 'bg-card border border-primary/20 rounded-tl-none'
+                              : 'bg-primary/20 border border-primary/30 rounded-tr-none'
+                              }`}
                           >
                             <div className="flex items-center gap-2 mb-1">
                               <span className={`text-xs font-bold ${isLeftSide ? 'text-primary' : 'text-primary'}`}>
@@ -484,9 +508,9 @@ const DebateRoom = () => {
                             <p className="text-sm leading-relaxed break-words">{arg.content}</p>
                             <div className="flex justify-end mt-1">
                               <span className="text-[10px] text-muted-foreground">
-                                {new Date(arg.created_at).toLocaleTimeString([], { 
-                                  hour: '2-digit', 
-                                  minute: '2-digit' 
+                                {new Date(arg.created_at).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit'
                                 })}
                               </span>
                             </div>
@@ -676,7 +700,7 @@ const DebateRoom = () => {
           <Card className="glass-panel glow-effect">
             <CardContent className="pt-6">
               <h2 className="text-2xl font-bold gradient-text mb-6">AI Judge Verdict</h2>
-              
+
               <div className="grid md:grid-cols-2 gap-6 mb-6">
                 <div>
                   <h3 className="font-semibold mb-3">{debate.side_a_name}</h3>
