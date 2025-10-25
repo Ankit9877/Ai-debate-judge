@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -228,10 +228,6 @@ const Debates = () => {
     }
   };
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate("/");
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -252,8 +248,18 @@ const Debates = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-primary/10">
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-8">
+      <div className="container mx-auto p-4">
+        <div className="flex items-center justify-between mb-8">
+        <NavLink
+                    to="/"
+                    className="
+                    font-bold text-4xl tracking-tight select-none
+                    text-primary px-1 rounded-lg
+                    [text-shadow:_0_0_12px_hsl(var(--primary)/0.4),_0_0_24px_hsl(var(--primary)/0.2)]
+                    animate-glow-pulse
+                ">
+                    Deb<span className="text-accent-foreground">Ai</span>
+                </NavLink>
           <h1 className="text-4xl font-bold gradient-text">Debates</h1>
           <div className="flex gap-4">
             <Dialog open={open} onOpenChange={setOpen}>
@@ -352,9 +358,6 @@ const Debates = () => {
                 </div>
               </DialogContent>
             </Dialog>
-            <Button variant="outline" onClick={handleSignOut}>
-              Sign Out
-            </Button>
           </div>
         </div>
 
