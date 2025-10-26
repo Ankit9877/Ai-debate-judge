@@ -109,7 +109,8 @@ const DebateRoom = () => {
   // page reload logic
   useEffect(() => {
     const handleBeforeUnload = (e) => {
-      if(!debate) return
+      if (!debate) return
+      if (!timerActive) return
       e.preventDefault();
       e.returnValue = "Do you want to reload page??";
     };
@@ -318,6 +319,7 @@ const DebateRoom = () => {
       });
     } finally {
       setLoading(false);
+      EndDebate();
     }
   };
 
@@ -340,6 +342,38 @@ const DebateRoom = () => {
     }
     navigate('/debates');
   }
+
+  const EndDebate = async () => {
+    if (!id || !user) return;
+
+    try {
+      const { error } = await supabase
+        .from("debates")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Debate Ended",
+        description: "The debate has been marked as inactive.",
+      });
+
+      // Refresh debate data to reflect change
+      await fetchDebateData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setTimerActive(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-primary/10">
@@ -464,7 +498,7 @@ const DebateRoom = () => {
                   </div>
                   {/* FIX: Simplified button visibility - show if timer is not active */}
                   {timerActive ?
-    <Button onClick={() => {navigate('/debates')}} variant="destructive" className="w-full mt-4">
+                    <Button onClick={() => EndDebate()} variant="destructive" className="w-full mt-4">
                       End Debate
                     </Button>
                     : <Button onClick={startTimer} className="w-full mt-4">
@@ -529,7 +563,7 @@ const DebateRoom = () => {
             {debate.status === 'active' && !result && (
               <div className="grid md:grid-cols-2 gap-6">
                 {/* Side A Input */}
-                <Card className={`glass-panel ${currentTurn === 'a' ? 'ring-2 ring-primary' : 'opacity-60'}`}>
+                <Card className={`glass-panel ${(currentTurn === 'a' && timerActive) ? 'ring-2 ring-primary' : 'opacity-60'}`}>
                   <CardContent className="pt-6">
                     <div className="mb-4">
                       <div className="flex items-center justify-between">
@@ -550,7 +584,7 @@ const DebateRoom = () => {
                           : "Present your argument..."
                       }
                       className="min-h-[120px] mb-3"
-                      disabled={currentTurn !== 'a'}
+                      disabled={currentTurn !== 'a' || !timerActive}
                     />
                     <Button
                       onClick={submitArgument}
@@ -564,7 +598,7 @@ const DebateRoom = () => {
                 </Card>
 
                 {/* Side B Input */}
-                <Card className={`glass-panel ${currentTurn === 'b' ? 'ring-2 ring-secondary' : 'opacity-60'}`}>
+                <Card className={`glass-panel ${(currentTurn === 'b' && timerActive) ? 'ring-2 ring-secondary' : 'opacity-60'}`}>
                   <CardContent className="pt-6">
                     <div className="mb-4">
                       <div className="flex items-center justify-between">
@@ -585,7 +619,7 @@ const DebateRoom = () => {
                           : "Present your argument..."
                       }
                       className="min-h-[120px] mb-3"
-                      disabled={currentTurn !== 'b'}
+                      disabled={currentTurn !== 'b' || !timerActive}
                     />
                     <Button
                       onClick={submitArgument}
