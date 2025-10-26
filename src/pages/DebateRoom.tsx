@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { User } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/badge";
+import AIJudgePanel from "@/components/AIJudgePanel";
 import { ArrowLeft, Loader2, Users, Clock } from "lucide-react";
 
 const DebateRoom = () => {
@@ -26,6 +27,7 @@ const DebateRoom = () => {
   const [totalTimeLeft, setTotalTimeLeft] = useState(1200); // 20 minutes total
   const [currentTurn, setCurrentTurn] = useState<'a' | 'b'>('a');
   const [timerActive, setTimerActive] = useState(false);
+  const [debateEnded, setDebateEnded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -319,6 +321,7 @@ const DebateRoom = () => {
       });
     } finally {
       setLoading(false);
+      setDebateEnded(true);
       EndDebate();
     }
   };
@@ -811,6 +814,7 @@ const DebateRoom = () => {
         )}
 
         <div ref={messagesEndRef} />
+        {debateEnded && <AIJudgePanel debate={debate} />}
       </div>
     </div>
   );

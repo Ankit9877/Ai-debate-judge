@@ -1,13 +1,97 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Brain, TrendingUp, Award, FileText } from "lucide-react";
+import { useState, useEffect } from "react";
+import { mockResults } from "@/data/mockResults";
+import { reasoningPool } from "@/data/mockResults";
 
-const AIJudgePanel = () => {
+interface DebateRow {
+  completed_at: string | null;
+  created_at: string;
+  created_by: string | null;
+  description: string | null;
+  id: string;
+  max_arguments: number | null;
+  mode: string;
+  side_a_name: string;
+  side_b_name: string;
+  started_at: string | null;
+  status: string;
+  topic: string;
+}
+
+interface AIJudgePanelProps {
+  debate?: DebateRow;
+  result?: typeof mockResults[0];
+}
+
+const AIJudgePanel = ({ debate, result: propResult }: AIJudgePanelProps) => {
+  const [result, setResult] = useState(propResult || mockResults[0]);
+
+  useEffect(() => {
+    if (propResult) {
+      setResult(propResult);
+    } else if (debate) {
+      // Random scores
+      const sideAScore = Math.random() * 3 + 7; // 7-10
+      const sideBScore = Math.random() * 3 + 6; // 6-9
+
+      const sideAData = {
+        name: debate.side_a_name,
+        score: sideAScore,
+        logic: Math.floor(Math.random() * 4 + 7),
+        evidence: Math.floor(Math.random() * 4 + 7),
+        persuasion: Math.floor(Math.random() * 4 + 7),
+      };
+
+      const sideBData = {
+        name: debate.side_b_name,
+        score: sideBScore,
+        logic: Math.floor(Math.random() * 4 + 6),
+        evidence: Math.floor(Math.random() * 4 + 6),
+        persuasion: Math.floor(Math.random() * 4 + 6),
+      };
+
+      // Determine winner
+      const winner = sideAScore > sideBScore ? "A" : "B";
+
+      // Pick reasoning based on winner
+      let reasoningIndex: number;
+      if (winner === "A") {
+        // 0-4: Side A pro only, 5-9: Side A pro & Side B con
+        reasoningIndex = Math.floor(Math.random() * 10);
+      } else {
+        // 10-14: Side B pro only, 15-19: Side B pro & Side B con
+        reasoningIndex = Math.floor(Math.random() * 10) + 10;
+      }
+
+      const randomReasoning = reasoningPool[reasoningIndex];
+
+      setResult({
+        id: debate.id,
+        sideA: sideAData,
+        sideB: sideBData,
+        reasoning: randomReasoning,
+        highlights: {
+          strongest: "Sample strongest point",
+          bestRebuttal: "Sample best rebuttal",
+          insight: "Sample critical insight",
+        },
+        blockchainHash: "0x0000...mock",
+      });
+    } else {
+      // Pick random mock result
+      const randomResult = mockResults[Math.floor(Math.random() * mockResults.length)];
+      setResult(randomResult);
+    }
+  }, [debate, propResult]);
+
+
+  const { sideA, sideB, reasoning, highlights, blockchainHash } = result;
+
   return (
     <section className="py-20 relative overflow-hidden bg-gradient-to-b from-background to-card/20">
-      {/* Background decoration */}
       <div className="absolute bottom-0 left-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
-      
       <div className="container mx-auto px-4 relative z-10">
         <div className="max-w-5xl mx-auto space-y-8">
           {/* Header */}
@@ -29,90 +113,9 @@ const AIJudgePanel = () => {
           {/* Scores Card */}
           <Card className="bg-card/80 backdrop-blur-md border-primary/30 overflow-hidden">
             <div className="p-8 space-y-6">
-              {/* Score Comparison */}
               <div className="grid md:grid-cols-2 gap-6">
-                {/* Side A Score */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold">Side A - Pro AI</h3>
-                    <Badge className="bg-primary/20 text-primary border-primary/30">
-                      Winner
-                    </Badge>
-                  </div>
-                  <div className="relative">
-                    <div className="flex items-end gap-2">
-                      <span className="text-6xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-                        8.5
-                      </span>
-                      <span className="text-2xl text-muted-foreground mb-2">/10</span>
-                    </div>
-                    <div className="mt-4 space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Logic</span>
-                        <span className="font-semibold">9/10</span>
-                      </div>
-                      <div className="w-full bg-muted rounded-full h-2">
-                        <div className="bg-gradient-primary h-2 rounded-full" style={{ width: '90%' }} />
-                      </div>
-                      
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Evidence</span>
-                        <span className="font-semibold">8/10</span>
-                      </div>
-                      <div className="w-full bg-muted rounded-full h-2">
-                        <div className="bg-gradient-primary h-2 rounded-full" style={{ width: '80%' }} />
-                      </div>
-                      
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Persuasiveness</span>
-                        <span className="font-semibold">8.5/10</span>
-                      </div>
-                      <div className="w-full bg-muted rounded-full h-2">
-                        <div className="bg-gradient-primary h-2 rounded-full" style={{ width: '85%' }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Side B Score */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold">Side B - Traditional</h3>
-                  </div>
-                  <div className="relative">
-                    <div className="flex items-end gap-2">
-                      <span className="text-6xl font-bold text-foreground">
-                        7.2
-                      </span>
-                      <span className="text-2xl text-muted-foreground mb-2">/10</span>
-                    </div>
-                    <div className="mt-4 space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Logic</span>
-                        <span className="font-semibold">7/10</span>
-                      </div>
-                      <div className="w-full bg-muted rounded-full h-2">
-                        <div className="bg-secondary h-2 rounded-full" style={{ width: '70%' }} />
-                      </div>
-                      
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Evidence</span>
-                        <span className="font-semibold">6.5/10</span>
-                      </div>
-                      <div className="w-full bg-muted rounded-full h-2">
-                        <div className="bg-secondary h-2 rounded-full" style={{ width: '65%' }} />
-                      </div>
-                      
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Persuasiveness</span>
-                        <span className="font-semibold">8/10</span>
-                      </div>
-                      <div className="w-full bg-muted rounded-full h-2">
-                        <div className="bg-secondary h-2 rounded-full" style={{ width: '80%' }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <SideScore side={sideA} isWinner={sideA.score > sideB.score} primary />
+                <SideScore side={sideB} isWinner={sideB.score > sideA.score} primary={false} />
               </div>
 
               {/* AI Reasoning */}
@@ -121,55 +124,28 @@ const AIJudgePanel = () => {
                   <FileText className="w-5 h-5" />
                   <h4 className="font-semibold text-lg">AI Judge Reasoning</h4>
                 </div>
-                <p className="text-muted-foreground leading-relaxed">
-                  Side A presented a more comprehensive argument supported by statistical evidence and a balanced perspective. 
-                  Their acknowledgment of AI's limitations while emphasizing its augmentative role demonstrated strategic reasoning. 
-                  Side B effectively highlighted the irreplaceable human elements in education but relied more on emotional appeals 
-                  than concrete counterarguments to Side A's data-driven points.
-                </p>
-                
+                <p className="text-muted-foreground leading-relaxed">{reasoning}</p>
+
                 <div className="grid sm:grid-cols-3 gap-4 pt-4">
-                  <div className="flex items-start gap-3 p-4 bg-muted/50 rounded-lg">
-                    <TrendingUp className="w-5 h-5 text-primary mt-0.5" />
-                    <div>
-                      <p className="text-sm font-semibold">Strongest Point</p>
-                      <p className="text-xs text-muted-foreground mt-1">Side A's data on adaptive learning</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start gap-3 p-4 bg-muted/50 rounded-lg">
-                    <Award className="w-5 h-5 text-secondary mt-0.5" />
-                    <div>
-                      <p className="text-sm font-semibold">Best Rebuttal</p>
-                      <p className="text-xs text-muted-foreground mt-1">Side B's human connection argument</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start gap-3 p-4 bg-muted/50 rounded-lg">
-                    <Brain className="w-5 h-5 text-accent mt-0.5" />
-                    <div>
-                      <p className="text-sm font-semibold">Critical Insight</p>
-                      <p className="text-xs text-muted-foreground mt-1">Augmentation vs replacement framing</p>
-                    </div>
-                  </div>
+                  <Highlight icon={<TrendingUp />} title="Strongest Point" text={highlights.strongest} />
+                  <Highlight icon={<Award />} title="Best Rebuttal" text={highlights.bestRebuttal} />
+                  <Highlight icon={<Brain />} title="Critical Insight" text={highlights.insight} />
                 </div>
               </div>
             </div>
           </Card>
 
-          {/* Blockchain Verification */}
+          {/* Blockchain */}
           <Card className="bg-gradient-to-r from-blockchain-accent/10 to-primary/10 border border-blockchain-accent/30 backdrop-blur-md">
             <div className="p-6 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-blockchain-accent/20 rounded-lg flex items-center justify-center">
-                  <svg className="w-6 h-6 text-blockchain-accent" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5zm0 2.18l8 3.64v8.43c0 4.45-3.08 8.63-7 9.67V4.18z"/>
-                  </svg>
+                  <Brain className="w-6 h-6 text-blockchain-accent" />
                 </div>
                 <div>
                   <h4 className="font-semibold">Blockchain Verified</h4>
                   <p className="text-sm text-muted-foreground">
-                    Result recorded on-chain: <span className="font-mono text-blockchain-accent">0x7a3b...9f2c</span>
+                    Result recorded on-chain: <span className="font-mono text-blockchain-accent">{blockchainHash}</span>
                   </p>
                 </div>
               </div>
@@ -183,5 +159,58 @@ const AIJudgePanel = () => {
     </section>
   );
 };
+
+const SideScore = ({
+  side,
+  isWinner,
+  primary,
+}: {
+  side: typeof mockResults[0]["sideA"];
+  isWinner: boolean;
+  primary: boolean;
+}) => (
+  <div className="space-y-4">
+    <div className="flex items-center justify-between">
+      <h3 className="text-lg font-semibold">{side.name}</h3>
+      {isWinner && (
+        <Badge className={`${primary ? "bg-primary/20 text-primary border-primary/30" : "bg-secondary/20 text-secondary border-secondary/30"}`}>
+          Winner
+        </Badge>
+      )}
+    </div>
+    <div className="relative">
+      <div className="flex items-end gap-2">
+        <span className={`text-6xl font-bold ${primary ? "bg-gradient-primary bg-clip-text text-transparent" : "text-foreground"}`}>
+          {side.score.toFixed(1)}
+        </span>
+        <span className="text-2xl text-muted-foreground mb-2">/10</span>
+      </div>
+      {["logic", "evidence", "persuasion"].map((k) => (
+        <div key={k} className="mt-2">
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground capitalize">{k}</span>
+            <span className="font-semibold">{side[k as keyof typeof side]}/10</span>
+          </div>
+          <div className="w-full bg-muted rounded-full h-2">
+            <div
+              className={`${primary ? "bg-gradient-primary" : "bg-secondary"} h-2 rounded-full`}
+              style={{ width: `${(side[k as keyof typeof side] as number) * 10}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const Highlight = ({ icon, title, text }: { icon: JSX.Element; title: string; text: string }) => (
+  <div className="flex items-start gap-3 p-4 bg-muted/50 rounded-lg">
+    <div className="text-primary mt-0.5">{icon}</div>
+    <div>
+      <p className="text-sm font-semibold">{title}</p>
+      <p className="text-xs text-muted-foreground mt-1">{text}</p>
+    </div>
+  </div>
+);
 
 export default AIJudgePanel;
