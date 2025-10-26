@@ -1,18 +1,37 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { FiMenu, FiX } from "react-icons/fi";
 
 function Navbar() {
-  const [signed, setSigned] = useState(true);
+
+  const [signedIn, setSignedIn] = useState(false);
+
+  useEffect(() => {
+    // Initial check
+    supabase.auth.getSession()
+    .then(({ data: { session } }) => {
+      setSignedIn(!!session);
+    })
+    .catch(err=>console.log(err))
+
+    // Listen for login/logout
+    const { data: subscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSignedIn(!!session);
+      }
+    );
+  }, []);
+
+
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate("/");
-    setSigned(false);
+    setSignedIn(false);
   };
 
   return (
@@ -53,7 +72,7 @@ function Navbar() {
               New Debate
             </Button>
           </NavLink>
-          {signed ? (
+          {signedIn ? (
             <Button variant="destructive" onClick={handleSignOut}>
               Sign Out
             </Button>
@@ -96,7 +115,7 @@ function Navbar() {
               New Debate
             </Button>
           </NavLink>
-          {signed ? (
+          {signedIn ? (
             <Button
               variant="destructive"
               onClick={() => {

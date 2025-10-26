@@ -106,9 +106,10 @@ const DebateRoom = () => {
 
     return () => clearInterval(timer);
   }, [timerActive, debate?.mode]);
-
+  // page reload logic
   useEffect(() => {
     const handleBeforeUnload = (e) => {
+      if(!debate) return
       e.preventDefault();
       e.returnValue = "Do you want to reload page??";
     };
@@ -118,7 +119,7 @@ const DebateRoom = () => {
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, []);
+  }, [debate]);
 
   const switchTurn = () => {
     setCurrentTurn(prev => prev === 'a' ? 'b' : 'a');
@@ -334,7 +335,7 @@ const DebateRoom = () => {
 
   const handleExit = () => {
     if (timerActive) {
-      Toast.warning("Can't exit while debate is running!!!", {position: "top-left"});
+      Toast.warning("Can't exit while debate is running!!!", { position: "top-left" });
       return
     }
     navigate('/debates');
@@ -463,7 +464,7 @@ const DebateRoom = () => {
                   </div>
                   {/* FIX: Simplified button visibility - show if timer is not active */}
                   {timerActive ?
-                    <Button onClick={() => navigate('/debates')} variant="destructive" className="w-full mt-4">
+    <Button onClick={() => {navigate('/debates')}} variant="destructive" className="w-full mt-4">
                       End Debate
                     </Button>
                     : <Button onClick={startTimer} className="w-full mt-4">

@@ -11,6 +11,7 @@ import { User } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/badge";
 import { getRandomTopic } from "@/utils/debateTopics";
 import { Loader2 } from "lucide-react";
+import { FaTrash } from 'react-icons/fa'
 
 const Debates = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -52,9 +53,8 @@ const Debates = () => {
 
   const fetchDebates = async () => {
     if (!user) return;
-    
+
     try {
-      // Get debates where user is a participant
       const { data: participantDebates, error: participantError } = await supabase
         .from('debate_participants')
         .select('debate_id')
@@ -64,14 +64,20 @@ const Debates = () => {
 
       const participantDebateIds = participantDebates?.map(p => p.debate_id) || [];
 
-      // Get debates created by user or user is participating in
+
+      let orFilter = `created_by.eq.${user.id}`;
+      if (participantDebateIds.length > 0) {
+        orFilter += `,id.in.(${participantDebateIds.join(',')})`;
+      }
+
       const { data, error } = await supabase
         .from('debates')
         .select('*')
-        .or(`created_by.eq.${user.id},id.in.(${participantDebateIds.length > 0 ? participantDebateIds.join(',') : 'null'})`)
+        .or(orFilter)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+
       setDebates(data || []);
     } catch (error: any) {
       toast({
@@ -83,6 +89,7 @@ const Debates = () => {
       setLoading(false);
     }
   };
+
 
   const createDebate = async () => {
     if (!user) return;
@@ -120,7 +127,7 @@ const Debates = () => {
         setSideBName("");
         setMode("online");
         fetchDebates();
-        
+
         navigate(`/debate/${data.id}`);
       }
     } catch (error: any) {
@@ -150,22 +157,22 @@ const Debates = () => {
       if (waitingDebates && waitingDebates.length > 0) {
         // Join existing debate
         const debate = waitingDebates[0];
-        
-      // Add user as participant on Side B
-      const { error: participantError } = await supabase
-        .from('debate_participants')
-        .insert({
-          debate_id: debate.id,
-          user_id: user.id,
-          side: 'b',
-        });
+
+        // Add user as participant on Side B
+        const { error: participantError } = await supabase
+          .from('debate_participants')
+          .insert({
+            debate_id: debate.id,
+            user_id: user.id,
+            side: 'b',
+          });
 
         if (participantError) throw participantError;
 
         // Update debate status to active
         const { error: updateError } = await supabase
           .from('debates')
-          .update({ 
+          .update({
             status: 'active',
             started_at: new Date().toISOString()
           })
@@ -183,7 +190,7 @@ const Debates = () => {
       } else {
         // Create new debate and wait for opponent
         const randomTopic = getRandomTopic();
-        
+
         const { data: newDebate, error: createError } = await supabase
           .from('debates')
           .insert({
@@ -200,14 +207,14 @@ const Debates = () => {
 
         if (createError) throw createError;
 
-      // Add creator as Side A participant
-      const { error: participantError } = await supabase
-        .from('debate_participants')
-        .insert({
-          debate_id: newDebate.id,
-          user_id: user.id,
-          side: 'a',
-        });
+        // Add creator as Side A participant
+        const { error: participantError } = await supabase
+          .from('debate_participants')
+          .insert({
+            debate_id: newDebate.id,
+            user_id: user.id,
+            side: 'a',
+          });
 
         if (participantError) throw participantError;
 
@@ -246,20 +253,49 @@ const Debates = () => {
     );
   }
 
+  const handleDelete = async (debateId, e) => {
+    e.stopPropagation();
+
+    const confirmDelete = window.confirm("Are you sure you want to delete this debate?");
+    if (!confirmDelete) return;
+
+    const { data, error } = await supabase
+      .from("debates")
+      .delete()
+      .eq("id", debateId)
+      .eq("created_by", user?.id)
+      .select();
+
+    console.log("Delete result:", { data, error });
+
+    if (error) {
+      toast({
+        title: "Error deleting debate",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setDebates((prev) => prev.filter((debate) => debate.id !== debateId));
+    toast({ title: "Deleted", description: "Debate removed successfully!" });
+  };
+
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-primary/10">
       <div className="container mx-auto p-4">
-        <div className="flex items-center justify-between mb-8">
-        <NavLink
-                    to="/"
-                    className="
+        <div className="w-full flex items-center justify-between mb-8">
+          <NavLink
+            to="/"
+            className="
                     font-bold text-4xl tracking-tight select-none
                     text-primary px-1 rounded-lg
                     [text-shadow:_0_0_12px_hsl(var(--primary)/0.4),_0_0_24px_hsl(var(--primary)/0.2)]
                     animate-glow-pulse
                 ">
-                    Deb<span className="text-accent-foreground">Ai</span>
-                </NavLink>
+            Deb<span className="text-accent-foreground">Ai</span>
+          </NavLink>
           <h1 className="text-4xl font-bold gradient-text">Debates</h1>
           <div className="flex gap-4">
             <Dialog open={open} onOpenChange={setOpen}>
@@ -295,8 +331,8 @@ const Debates = () => {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {mode === "online" 
-                        ? "Get matched with another user for a real-time debate" 
+                      {mode === "online"
+                        ? "Get matched with another user for a real-time debate"
                         : "Practice debating against AI opponents"}
                     </p>
                   </div>
@@ -305,7 +341,7 @@ const Debates = () => {
                     <div className="bg-secondary/20 p-4 rounded-lg">
                       <h4 className="font-medium mb-2">Online Matchmaking</h4>
                       <p className="text-sm text-muted-foreground mb-4">
-                        You'll be matched with another user and given a random debate topic. 
+                        You'll be matched with another user and given a random debate topic.
                         Click "Find Match" to start!
                       </p>
                       <Button onClick={createDebate} className="w-full">
@@ -363,37 +399,41 @@ const Debates = () => {
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {debates.map((debate) => (
-            <Card 
-              key={debate.id} 
-              className="glass-panel hover:scale-105 transition-transform cursor-pointer"
-              onClick={() => navigate(`/debate/${debate.id}`)}
-            >
-              <CardHeader>
-                <div className="flex justify-between items-start mb-2">
-                  <CardTitle className="text-lg">{debate.topic}</CardTitle>
-                  <div className="flex gap-2">
-                    <Badge variant="outline">
-                      {debate.mode === 'online' ? '🌐 Online' : '🤖 Offline'}
-                    </Badge>
-                    <Badge className={getStatusColor(debate.status)}>
-                      {debate.status}
-                    </Badge>
+            <div key={debate.id} className="flex flex-col w-full gap-2">
+              <Card
+                className="glass-panel relative px-4 py-2 hover:scale-105 transition-transform cursor-pointer"
+                onClick={() => navigate(`/debate/${debate.id}`)}
+              >
+                <CardHeader>
+                  <div className="flex justify-between items-start mb-2">
+                    <CardTitle className="text-lg">{debate.topic}</CardTitle>
+                    <div className="flex gap-2">
+                      <Badge variant="outline">
+                        {debate.mode === 'online' ? '🌐 Online' : '🤖 Offline'}
+                      </Badge>
+                      <Badge className={getStatusColor(debate.status)}>
+                        {debate.status}
+                      </Badge>
+                    </div>
                   </div>
-                </div>
-                {debate.description && (
-                  <CardDescription className="line-clamp-2">
-                    {debate.description}
-                  </CardDescription>
-                )}
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{debate.side_a_name}</span>
-                  <span>vs</span>
-                  <span>{debate.side_b_name}</span>
-                </div>
-              </CardContent>
-            </Card>
+                  {debate.description && (
+                    <CardDescription className="line-clamp-2">
+                      {debate.description}
+                    </CardDescription>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>{debate.side_a_name}</span>
+                    <span>vs</span>
+                    <span>{debate.side_b_name}</span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Button variant="destructive" onClick={(e) => handleDelete(debate.id, e)}>
+                <FaTrash />
+              </Button>
+            </div>
           ))}
         </div>
 
